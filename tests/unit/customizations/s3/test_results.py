@@ -35,6 +35,7 @@ from awscli.customizations.s3.results import DeleteResultSubscriber
 from awscli.customizations.s3.results import ResultRecorder
 from awscli.customizations.s3.results import ResultPrinter
 from awscli.customizations.s3.results import OnlyShowErrorsResultPrinter
+from awscli.customizations.s3.results import NoProgressResultPrinter
 from awscli.customizations.s3.results import ResultProcessor
 from awscli.customizations.s3.results import CommandResultRecorder
 from awscli.customizations.s3.utils import relative_path
@@ -787,6 +788,34 @@ class ResultRecorderTest(unittest.TestCase):
         self.assertEqual(self.result_recorder.expected_files_transferred, 0)
         self.assertEqual(self.result_recorder.files_transferred, 0)
 
+    def test_result_with_unicode(self):
+        unicode_source = u'\u2713'
+        self.result_recorder(
+            QueuedResult(
+                transfer_type=self.transfer_type, src=unicode_source,
+                dest=self.dest, total_transfer_size=self.total_transfer_size
+            )
+        )
+        self.assertEqual(
+            self.result_recorder.expected_bytes_transferred,
+            self.total_transfer_size
+        )
+        self.assertEqual(self.result_recorder.expected_files_transferred, 1)
+
+    def test_result_with_encoded_unicode(self):
+        unicode_source = u'\u2713'.encode('utf-8')
+        self.result_recorder(
+            QueuedResult(
+                transfer_type=self.transfer_type, src=unicode_source,
+                dest=self.dest, total_transfer_size=self.total_transfer_size
+            )
+        )
+        self.assertEqual(
+            self.result_recorder.expected_bytes_transferred,
+            self.total_transfer_size
+        )
+        self.assertEqual(self.result_recorder.expected_files_transferred, 1)
+
 
 class BaseResultPrinterTest(unittest.TestCase):
     def setUp(self):
@@ -1405,6 +1434,155 @@ class TestResultPrinter(BaseResultPrinterTest):
         self.result_recorder.final_expected_files_transferred = 0
         self.result_printer(FinalTotalSubmissionsResult(0))
         self.assertEqual(self.out_file.getvalue(), '')
+
+    def test_print_unicode_success_src_and_dest(self):
+        # Pretend that this is the final result in the result queue that
+        # is processed.
+        self.result_recorder.final_expected_files_transferred = 1
+        self.result_recorder.expected_files_transferred = 1
+        self.result_recorder.files_transferred = 1
+
+        result = SuccessResult(
+            transfer_type='upload',
+            src=u'/tmp/\u2713',
+            dest='s3://mybucket/mykey'
+        )
+        self.result_printer(result)
+        expected = u'upload: /tmp/\u2713 to s3://mybucket/mykey\n'
+        self.assertEqual(self.out_file.getvalue(), expected)
+
+    def test_print_unicode_success_src(self):
+        # Pretend that this is the final result in the result queue that
+        # is processed.
+        self.result_recorder.final_expected_files_transferred = 1
+        self.result_recorder.expected_files_transferred = 1
+        self.result_recorder.files_transferred = 1
+
+        result = SuccessResult(
+            transfer_type='delete',
+            src=u's3://mybucket/tmp/\u2713',
+            dest=None
+        )
+        self.result_printer(result)
+        expected = u'delete: s3://mybucket/tmp/\u2713\n'
+        self.assertEqual(self.out_file.getvalue(), expected)
+
+    def test_print_unicode_dryrun(self):
+        result = DryRunResult(
+            transfer_type='upload',
+            src=u's3://mybucket/\u2713',
+            dest='./local/file'
+        )
+        self.result_printer(result)
+        expected = u'(dryrun) upload: s3://mybucket/\u2713 to ./local/file\n'
+        self.assertEqual(self.out_file.getvalue(), expected)
+
+    def test_print_unicode_failure(self):
+        transfer_type = 'upload'
+        src = u'\u2713'
+        dest = 's3://mybucket/mykey'
+
+        # Pretend that this is the final result in the result queue that
+        # is processed.
+        self.result_recorder.final_expected_files_transferred = 1
+        self.result_recorder.expected_files_transferred = 1
+        self.result_recorder.files_transferred = 1
+
+        failure_result = FailureResult(
+            transfer_type=transfer_type, src=src, dest=dest,
+            exception=Exception('my exception'))
+
+        self.result_printer(failure_result)
+
+        ref_failure_statement = (
+            u'upload failed: \u2713 to s3://mybucket/mykey my exception\n'
+        )
+        self.assertEqual(self.error_file.getvalue(), ref_failure_statement)
+        self.assertEqual(self.out_file.getvalue(), '')
+
+    def test_print_unicode_warning(self):
+        # Pretend that this is the final result in the result queue that
+        # is processed.
+        self.result_recorder.final_expected_files_transferred = 1
+        self.result_recorder.expected_files_transferred = 1
+        self.result_recorder.files_transferred = 1
+
+        self.result_printer(WarningResult(u'warning: unicode exists \u2713'))
+        ref_warning_statement = u'warning: unicode exists \u2713\n'
+        self.assertEqual(self.error_file.getvalue(), ref_warning_statement)
+        self.assertEqual(self.out_file.getvalue(), '')
+
+    def test_print_unicode_error(self):
+        self.result_printer(ErrorResult(Exception('unicode exists \u2713')))
+        ref_error_statement = 'fatal error: unicode exists \u2713\n'
+        self.assertEqual(self.error_file.getvalue(), ref_error_statement)
+
+
+class TestNoProgressResultPrinter(BaseResultPrinterTest):
+    def setUp(self):
+        super(TestNoProgressResultPrinter, self).setUp()
+        self.result_printer = NoProgressResultPrinter(
+            result_recorder=self.result_recorder,
+            out_file=self.out_file,
+            error_file=self.error_file
+        )
+
+    def test_does_not_print_progress_result(self):
+        progress_result = self.get_progress_result()
+        self.result_printer(progress_result)
+        self.assertEqual(self.out_file.getvalue(), '')
+
+    def test_does_print_sucess_result(self):
+        transfer_type = 'upload'
+        src = 'file'
+        dest = 's3://mybucket/mykey'
+        success_result = SuccessResult(
+            transfer_type=transfer_type, src=src, dest=dest)
+
+        self.result_printer(success_result)
+        expected_message = 'upload: file to s3://mybucket/mykey\n'
+        self.assertEqual(self.out_file.getvalue(), expected_message)
+
+    def test_print_failure_result(self):
+        transfer_type = 'upload'
+        src = 'file'
+        dest = 's3://mybucket/mykey'
+        failure_result = FailureResult(
+            transfer_type=transfer_type, src=src, dest=dest,
+            exception=Exception('my exception'))
+
+        self.result_printer(failure_result)
+
+        ref_failure_statement = (
+            'upload failed: file to s3://mybucket/mykey my exception\n'
+        )
+        self.assertEqual(self.error_file.getvalue(), ref_failure_statement)
+
+    def test_print_warnings_result(self):
+        self.result_printer(WarningResult('warning: my warning'))
+        ref_warning_statement = 'warning: my warning\n'
+        self.assertEqual(self.error_file.getvalue(), ref_warning_statement)
+
+    def test_final_total_does_not_try_to_clear_empty_progress(self):
+        transfer_type = 'upload'
+        src = 'file'
+        dest = 's3://mybucket/mykey'
+
+        mb = 1024 * 1024
+        self.result_recorder.expected_files_transferred = 1
+        self.result_recorder.files_transferred = 1
+        self.result_recorder.expected_bytes_transferred = mb
+        self.result_recorder.bytes_transferred = mb
+
+        success_result = SuccessResult(
+            transfer_type=transfer_type, src=src, dest=dest)
+        self.result_printer(success_result)
+        ref_statement = 'upload: file to s3://mybucket/mykey\n'
+        self.assertEqual(self.out_file.getvalue(), ref_statement)
+
+        self.result_recorder.final_expected_files_transferred = 1
+        self.result_printer(FinalTotalSubmissionsResult(1))
+        self.assertEqual(self.out_file.getvalue(), ref_statement)
 
 
 class TestOnlyShowErrorsResultPrinter(BaseResultPrinterTest):

@@ -28,6 +28,7 @@ class TestYaml(unittest.TestCase):
         Key3: !FooBar [!Baz YetAnother, "hello"]
         Key4: !SomeTag {"a": "1"}
         Key5: !GetAtt OneMore.Outputs.Arn
+        Key6: !Condition OtherCondition
     """
 
     parsed_yaml_dict = {
@@ -51,6 +52,9 @@ class TestYaml(unittest.TestCase):
             },
             "Key5": {
                 "Fn::GetAtt": ["OneMore", "Outputs.Arn"]
+            },
+            "Key6": {
+                "Condition": "OtherCondition"
             }
         }
     }
@@ -83,4 +87,9 @@ class TestYaml(unittest.TestCase):
 
         actual_output = yaml_parse(input)
         self.assertEquals(actual_output, output)
+
+    def test_parse_json_with_tabs(self):
+        template = '{\n\t"foo": "bar"\n}'
+        output = yaml_parse(template)
+        self.assertEqual(output, {'foo': 'bar'})
 

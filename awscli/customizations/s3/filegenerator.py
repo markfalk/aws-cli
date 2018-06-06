@@ -221,7 +221,7 @@ class FileGenerator(object):
     def _safely_get_file_stats(self, file_path):
         try:
             size, last_update = get_file_stat(file_path)
-        except OSError:
+        except (OSError, ValueError):
             self.triggers_warning(file_path)
         else:
             last_update = self._validate_update_time(last_update, file_path)
@@ -334,8 +334,10 @@ class FileGenerator(object):
                     prefix = includes[0].rstrip('*').lstrip(bucket).lstrip('/')
                     LOGGER.debug("Using lone include filter as prefix: %s" % (prefix))
 
+            extra_args = self.request_parameters.get('ListObjects', {})
             for key in lister.list_objects(bucket=bucket, prefix=prefix,
-                                           page_size=self.page_size):
+                                           page_size=self.page_size,
+                                           extra_args=extra_args):
                 source_path, response_data = key
                 if response_data['Size'] == 0 and source_path.endswith('/'):
                     if self.operation_name == 'delete':

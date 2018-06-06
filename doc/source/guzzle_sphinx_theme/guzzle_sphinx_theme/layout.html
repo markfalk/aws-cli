@@ -5,6 +5,7 @@
   {{ super() }}
   <link rel="stylesheet" type="text/css" href="{{ pathto('_static/bootstrap.min.css', 1) }}" />
   <script type="text/javascript" src="{{ pathto('_static/jquery-1.9.1.min.js', 1)}}"></script>
+  <script src="/SdkStatic/sdk-priv.js" async="true"></script>
 {%- endblock %}
 
 {# Displays the next and previous links both before and after content #}
@@ -53,7 +54,7 @@
         </ul>
         {%- if theme_github_user and theme_github_repo %}
         <div class="pull-right" id="github-stars">
-          <iframe src="http://ghbtns.com/github-btn.html?user={{ theme_github_user }}&repo={{ theme_github_repo }}&type=watch&count=true&size=small"
+          <iframe src="https://ghbtns.com/github-btn.html?user={{ theme_github_user }}&repo={{ theme_github_repo }}&type=watch&count=true&size=small"
                   allowtransparency="true" frameborder="0" scrolling="0" width="110px" height="20px"></iframe>
         </div>
         {%- endif %}

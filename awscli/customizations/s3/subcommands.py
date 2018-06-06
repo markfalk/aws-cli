@@ -85,7 +85,7 @@ FOLLOW_SYMLINKS = {'name': 'follow-symlinks', 'action': 'store_true',
                        "Note that S3 does not support symbolic links, so the "
                        "contents of the link target are uploaded under the "
                        "name of the link. When neither ``--follow-symlinks`` "
-                       "nor ``--no-follow-symlinks`` is specifed, the default "
+                       "nor ``--no-follow-symlinks`` is specified, the default "
                        "is to follow symlinks.")}
 
 
@@ -227,7 +227,7 @@ SSE_C_COPY_SOURCE = {
         'object. ``AES256`` is the only valid '
         'value. If the parameter is specified but no value is provided, '
         '``AES256`` is used. If you provide this value, '
-        '``--sse-c-copy-source-key`` must be specfied as well. '
+        '``--sse-c-copy-source-key`` must be specified as well. '
     )
 }
 
@@ -240,18 +240,19 @@ SSE_C_COPY_SOURCE_KEY = {
         'key. Specifies the customer-provided encryption key for Amazon S3 '
         'to use to decrypt the source object. The encryption key provided '
         'must be one that was used when the source object was created. '
-        'If you provide this value, ``--sse-c-copy-source`` be specfied as '
+        'If you provide this value, ``--sse-c-copy-source`` be specified as '
         'well. The key provided should **not** be base64 encoded.'
     )
 }
 
 
 STORAGE_CLASS = {'name': 'storage-class',
-                 'choices': ['STANDARD', 'REDUCED_REDUNDANCY', 'STANDARD_IA'],
+                 'choices': ['STANDARD', 'REDUCED_REDUNDANCY', 'STANDARD_IA',
+                             'ONEZONE_IA'],
                  'help_text': (
                      "The type of storage to use for the object. "
                      "Valid choices are: STANDARD | REDUCED_REDUNDANCY "
-                     "| STANDARD_IA. "
+                     "| STANDARD_IA | ONEZONE_IA. "
                      "Defaults to 'STANDARD'")}
 
 
@@ -368,6 +369,15 @@ ONLY_SHOW_ERRORS = {'name': 'only-show-errors', 'action': 'store_true',
                         'output is suppressed.')}
 
 
+NO_PROGRESS = {'name': 'no-progress',
+               'action': 'store_false',
+               'dest': 'progress',
+               'help_text': (
+                   'File transfer progress is not displayed. This flag '
+                   'is only applied when the quiet and only-show-errors '
+                   'flags are not provided.')}
+
+
 EXPECTED_SIZE = {'name': 'expected-size',
                  'help_text': (
                      'This argument specifies the expected size of a stream '
@@ -423,8 +433,9 @@ TRANSFER_ARGS = [DRYRUN, QUIET, INCLUDE, EXCLUDE, ACL,
                  SSE_C_COPY_SOURCE_KEY, STORAGE_CLASS, GRANTS,
                  WEBSITE_REDIRECT, CONTENT_TYPE, CACHE_CONTROL,
                  CONTENT_DISPOSITION, CONTENT_ENCODING, CONTENT_LANGUAGE,
-                 EXPIRES, SOURCE_REGION, ONLY_SHOW_ERRORS,
-                 PAGE_SIZE, IGNORE_GLACIER_WARNINGS, FORCE_GLACIER_TRANSFER]
+                 EXPIRES, SOURCE_REGION, ONLY_SHOW_ERRORS, NO_PROGRESS,
+                 PAGE_SIZE, IGNORE_GLACIER_WARNINGS, FORCE_GLACIER_TRANSFER,
+                 REQUEST_PAYER]
 
 
 def get_client(session, region, endpoint_url, verify, config=None):
@@ -633,9 +644,12 @@ class WebsiteCommand(S3Command):
 
 class PresignCommand(S3Command):
     NAME = 'presign'
-    DESCRIPTION = ("Generate a pre-signed URL for an Amazon S3 object. "
-                   "This allows anyone who receives the pre-signed URL "
-                   "to retrieve the S3 object with an HTTP GET request.")
+    DESCRIPTION = (
+        "Generate a pre-signed URL for an Amazon S3 object. This allows "
+        "anyone who receives the pre-signed URL to retrieve the S3 object "
+        "with an HTTP GET request. For sigv4 requests the region needs to be "
+        "configured explicitly."
+    )
     USAGE = "<S3Uri>"
     ARG_TABLE = [{'name': 'path',
                   'positional_arg': True, 'synopsis': USAGE},
@@ -731,8 +745,8 @@ class RmCommand(S3TransferCommand):
     DESCRIPTION = "Deletes an S3 object."
     USAGE = "<S3Uri>"
     ARG_TABLE = [{'name': 'paths', 'nargs': 1, 'positional_arg': True,
-                  'synopsis': USAGE}, DRYRUN, QUIET, RECURSIVE, INCLUDE,
-                 EXCLUDE, ONLY_SHOW_ERRORS, PAGE_SIZE]
+                  'synopsis': USAGE}, DRYRUN, QUIET, RECURSIVE, REQUEST_PAYER,
+                 INCLUDE, EXCLUDE, ONLY_SHOW_ERRORS, PAGE_SIZE]
 
 
 class SyncCommand(S3TransferCommand):
@@ -834,7 +848,7 @@ class CommandArchitecture(object):
     instructions identifies which type of components are required based on the
     name of the command and the parameters passed to the command line.  After
     the instructions are generated the second step involves using the
-    lsit of instructions to wire together an assortment of generators to
+    list of instructions to wire together an assortment of generators to
     perform the command.
     """
     def __init__(self, session, cmd, parameters, runtime_config=None):
@@ -900,7 +914,7 @@ class CommandArchitecture(object):
         """Determines the sync strategy for the command.
 
         It defaults to the default sync strategies but a customizable sync
-        strategy can overide the default strategy if it returns the instance
+        strategy can override the default strategy if it returns the instance
         of its self when the event is emitted.
         """
         sync_strategies = {}
@@ -910,7 +924,7 @@ class CommandArchitecture(object):
         sync_strategies['file_not_at_dest_sync_strategy'] = MissingFileSync()
         sync_strategies['file_not_at_src_sync_strategy'] = NeverSync()
 
-        # Determine what strategies to overide if any.
+        # Determine what strategies to override if any.
         responses = self.session.emit(
             'choosing-s3-sync-strategy', params=self.parameters)
         if responses is not None:
@@ -980,26 +994,16 @@ class CommandArchitecture(object):
             'filters': filters
         }
 
-        fgen_request_parameters = {}
-        fgen_head_object_params = {}
-        fgen_request_parameters['HeadObject'] = fgen_head_object_params
+        fgen_request_parameters = \
+            self._get_file_generator_request_parameters_skeleton()
+        self._map_request_payer_params(fgen_request_parameters)
+        self._map_sse_c_params(fgen_request_parameters, paths_type)
         fgen_kwargs['request_parameters'] = fgen_request_parameters
 
-        # SSE-C may be neaded for HeadObject for copies/downloads/deletes
-        # If the operation is s3 to s3, the FileGenerator should use the
-        # copy source key and algorithm. Otherwise, use the regular
-        # SSE-C key and algorithm. Note the reverse FileGenerator does
-        # not need any of these because it is used only for sync operations
-        # which only use ListObjects which does not require HeadObject.
-        RequestParamsMapper.map_head_object_params(
-            fgen_head_object_params, self.parameters)
-        if paths_type == 's3s3':
-            RequestParamsMapper.map_head_object_params(
-                fgen_head_object_params, {
-                    'sse_c': self.parameters.get('sse_c_copy_source'),
-                    'sse_c_key': self.parameters.get('sse_c_copy_source_key')
-                }
-            )
+        rgen_request_parameters =  \
+            self._get_file_generator_request_parameters_skeleton()
+        self._map_request_payer_params(rgen_request_parameters)
+        rgen_kwargs['request_parameters'] = rgen_request_parameters
 
         file_generator = FileGenerator(**fgen_kwargs)
         rev_generator = FileGenerator(**rgen_kwargs)
@@ -1077,9 +1081,44 @@ class CommandArchitecture(object):
         rc = 0
         if files[0].num_tasks_failed > 0:
             rc = 1
-        if files[0].num_tasks_warned > 0:
+        elif files[0].num_tasks_warned > 0:
             rc = 2
         return rc
+
+    def _get_file_generator_request_parameters_skeleton(self):
+        return {
+            'HeadObject': {},
+            'ListObjects': {}
+        }
+
+    def _map_request_payer_params(self, request_parameters):
+        RequestParamsMapper.map_head_object_params(
+            request_parameters['HeadObject'], {
+                'request_payer': self.parameters.get('request_payer')
+            }
+        )
+        RequestParamsMapper.map_list_objects_params(
+            request_parameters['ListObjects'], {
+                'request_payer': self.parameters.get('request_payer')
+            }
+        )
+
+    def _map_sse_c_params(self, request_parameters, paths_type):
+        # SSE-C may be neaded for HeadObject for copies/downloads/deletes
+        # If the operation is s3 to s3, the FileGenerator should use the
+        # copy source key and algorithm. Otherwise, use the regular
+        # SSE-C key and algorithm. Note the reverse FileGenerator does
+        # not need any of these because it is used only for sync operations
+        # which only use ListObjects which does not require HeadObject.
+        RequestParamsMapper.map_head_object_params(
+            request_parameters['HeadObject'], self.parameters)
+        if paths_type == 's3s3':
+            RequestParamsMapper.map_head_object_params(
+                request_parameters['HeadObject'], {
+                    'sse_c': self.parameters.get('sse_c_copy_source'),
+                    'sse_c_key': self.parameters.get('sse_c_copy_source_key')
+                }
+            )
 
 
 class CommandParameters(object):

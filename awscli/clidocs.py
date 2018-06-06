@@ -340,6 +340,16 @@ class OperationDocumentEventHandler(CLIDocumentEventHandler):
         doc.style.h2('Description')
         doc.include_doc_string(operation_model.documentation)
         self._add_webapi_crosslink(help_command)
+        self._add_top_level_args_reference(help_command)
+
+    def _add_top_level_args_reference(self, help_command):
+        help_command.doc.writeln('')
+        help_command.doc.write("See ")
+        help_command.doc.style.internal_link(
+            title="'aws help'",
+            page='/reference/index'
+        )
+        help_command.doc.writeln(' for descriptions of global parameters.')
 
     def _add_webapi_crosslink(self, help_command):
         doc = help_command.doc
@@ -416,12 +426,12 @@ class OperationDocumentEventHandler(CLIDocumentEventHandler):
             doc.style.dedent()
             doc.write('}')
         elif argument_model.type_name == 'structure':
-            doc.write('{')
-            doc.style.indent()
-            doc.style.new_line()
             self._doc_input_structure_members(doc, argument_model, stack)
 
     def _doc_input_structure_members(self, doc, argument_model, stack):
+        doc.write('{')
+        doc.style.indent()
+        doc.style.new_line()
         members = argument_model.members
         for i, member_name in enumerate(members):
             member_model = members[member_name]
@@ -441,9 +451,8 @@ class OperationDocumentEventHandler(CLIDocumentEventHandler):
             if i < len(members) - 1:
                 doc.write(',')
                 doc.style.new_line()
-            else:
-                doc.style.dedent()
-                doc.style.new_line()
+        doc.style.dedent()
+        doc.style.new_line()
         doc.write('}')
 
     def doc_option_example(self, arg_name, help_command, event_name, **kwargs):
@@ -561,6 +570,9 @@ class OperationDocumentEventHandler(CLIDocumentEventHandler):
             self._doc_member_for_output(doc, '', member_shape.member, stack)
         doc.style.dedent()
         doc.style.new_paragraph()
+
+    def doc_options_end(self, help_command, **kwargs):
+        self._add_top_level_args_reference(help_command)
 
 
 class TopicListerDocumentEventHandler(CLIDocumentEventHandler):

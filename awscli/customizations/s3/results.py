@@ -22,7 +22,7 @@ from s3transfer.exceptions import CancelledError
 from s3transfer.exceptions import FatalError
 from s3transfer.subscribers import BaseSubscriber
 
-from awscli.compat import queue
+from awscli.compat import queue, ensure_text_type
 from awscli.customizations.s3.utils import relative_path
 from awscli.customizations.s3.utils import human_readable_size
 from awscli.customizations.utils import uni_print
@@ -246,8 +246,11 @@ class ResultRecorder(BaseResultHandler):
                 'Any result using _get_ongoing_dict_key must subclass from '
                 'BaseResult. Provided result is of type: %s' % type(result)
             )
-        return ':'.join(
-            str(el) for el in [result.transfer_type, result.src, result.dest])
+        key_parts = []
+        for result_property in [result.transfer_type, result.src, result.dest]:
+            if result_property is not None:
+                key_parts.append(ensure_text_type(result_property))
+        return u':'.join(key_parts)
 
     def _pop_result_from_ongoing_dicts(self, result):
         ongoing_key = self._get_ongoing_dict_key(result)
@@ -353,24 +356,24 @@ class ResultPrinter(BaseResultHandler):
         'Completed {files_completed} file(s) with ' + _FILES_REMAINING
     )
     SUCCESS_FORMAT = (
-        '{transfer_type}: {transfer_location}'
+        u'{transfer_type}: {transfer_location}'
     )
-    DRY_RUN_FORMAT = '(dryrun) ' + SUCCESS_FORMAT
+    DRY_RUN_FORMAT = u'(dryrun) ' + SUCCESS_FORMAT
     FAILURE_FORMAT = (
-        '{transfer_type} failed: {transfer_location} {exception}'
+        u'{transfer_type} failed: {transfer_location} {exception}'
     )
     # TODO: Add "warning: " prefix once all commands are converted to using
     # result printer and remove "warning: " prefix from ``create_warning``.
     WARNING_FORMAT = (
-        '{message}'
+        u'{message}'
     )
     ERROR_FORMAT = (
-        'fatal error: {exception}'
+        u'fatal error: {exception}'
     )
     CTRL_C_MSG = 'cancelled: ctrl-c received'
 
-    SRC_DEST_TRANSFER_LOCATION_FORMAT = '{src} to {dest}'
-    SRC_TRANSFER_LOCATION_FORMAT = '{src}'
+    SRC_DEST_TRANSFER_LOCATION_FORMAT = u'{src} to {dest}'
+    SRC_TRANSFER_LOCATION_FORMAT = u'{src}'
 
     def __init__(self, result_recorder, out_file=None, error_file=None):
         """Prints status of ongoing transfer
@@ -549,6 +552,12 @@ class ResultPrinter(BaseResultHandler):
     def _clear_progress_if_no_more_expected_transfers(self, **kwargs):
         if self._progress_length and not self._has_remaining_progress():
             uni_print(self._adjust_statement_padding(''), self._out_file)
+
+
+class NoProgressResultPrinter(ResultPrinter):
+    """A result printer that doesn't print progress"""
+    def _print_progress(self, **kwargs):
+        pass
 
 
 class OnlyShowErrorsResultPrinter(ResultPrinter):

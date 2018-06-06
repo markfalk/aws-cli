@@ -330,3 +330,39 @@ NOTE: JSON arguments must include options and values as their own items in the l
 - Command (Using emrfs.json)::
 
     aws emr create-cluster --instance-type m3.xlarge --release-label emr-5.3.1 --emrfs file://emrfs.json
+
+- Command (Using custom ami id)::
+
+    aws emr create-cluster --instance-type m3.xlarge --release-label emr-5.3.1 --custom-ami-id ami-9be6f38c
+
+- Command (Using custom EBS root volume)::
+
+    aws emr create-cluster --instance-type m3.xlarge --release-label emr-5.3.1 --ebs-root-volume-size 20
+
+- Command (Repo upgrade option on instance boot. This can be used only with custom AMIs)::
+
+    aws emr create-cluster --instance-type m3.xlarge --release-label emr-5.3.1 --repo-upgrade-on-boot ${RepoUpgrade}
+
+    RepoUpgrade {
+       SECURITY,
+       NONE
+    }
+
+
+**21. To create an Amazon EMR cluster with Kerberos configured**
+
+- Command::
+
+    aws emr create-cluster --instance-type m3.xlarge --release-label emr-5.10.0 --service-role EMR_DefaultRole --ec2-attributes InstanceProfile=EMR_EC2_DefaultRole --security-configuration mySecurityConfiguration --kerberos-attributes Realm=EC2.INTERNAL,KdcAdminPassword=123,CrossRealmTrustPrincipalPassword=123
+
+- JSON equivalent (contents of kerberos_attributes.json)::
+
+    {
+      "Realm": "EC2.INTERNAL",
+      "KdcAdminPassword": "123",
+      "CrossRealmTrustPrincipalPassword": "123",
+    }
+
+- Command (Using kerberos_attributes.json)::
+
+    aws emr create-cluster --instance-type m3.xlarge --release-label emr-5.10.0 --service-role EMR_DefaultRole --ec2-attributes InstanceProfile=EMR_EC2_DefaultRole --security-configuration mySecurityConfiguration --kerberos-attributes file://kerberos_attributes.json

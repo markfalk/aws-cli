@@ -43,6 +43,12 @@ class TestRecursiveShapes(unittest.TestCase):
         writes = '\n'.join(writes)
         self.assertIn(expected, writes)
 
+    def assert_proper_indentation(self):
+        indent = self.help_command.doc.style.indent.call_count
+        dedent = self.help_command.doc.style.dedent.call_count
+        message = 'Imbalanced indentation: indent (%s) != dedent (%s)'
+        self.assertEquals(indent, dedent, message % (indent, dedent))
+
     def test_handle_recursive_input(self):
         shape_map = {
             'RecursiveStruct': {
@@ -81,6 +87,24 @@ class TestRecursiveShapes(unittest.TestCase):
         self.help_command.obj = operation_model
         self.operation_handler.doc_output(self.help_command, 'event-name')
         self.assert_rendered_docs_contain('( ... recursive ... )')
+
+    def test_handle_empty_nested_struct(self):
+        shape_map = {
+            'InputStruct': {
+                'type': 'structure',
+                'members': {
+                    'A': {'shape': 'Empty'},
+                }
+            },
+            'Empty': {'type': 'structure', 'members': {}}
+        }
+        shape = StructureShape('InputStruct', shape_map['InputStruct'],
+                               ShapeResolver(shape_map))
+
+        self.arg_table['arg-name'] = mock.Mock(argument_model=shape)
+        self.operation_handler.doc_option_example(
+            'arg-name', self.help_command, 'process-cli-arg.foo.bar')
+        self.assert_proper_indentation()
 
 
 class TestTranslationMap(unittest.TestCase):
@@ -270,6 +294,48 @@ class TestCLIDocumentEventHandler(unittest.TestCase):
             'See also: `AWS API Documentation '
             '<https://docs.aws.amazon.com/goto/'
             'WebAPI/service-1-2-3/myoperation>`_', rendered)
+
+    def test_includes_global_args_ref_in_man_description(self):
+        help_command = self.create_help_command()
+        operation_handler = OperationDocumentEventHandler(help_command)
+        operation_handler.doc_description(help_command=help_command)
+        rendered = help_command.doc.getvalue().decode('utf-8')
+        # The links aren't generated in the "man" mode.
+        self.assertIn(
+            "See 'aws help' for descriptions of global parameters", rendered
+        )
+
+    def test_includes_global_args_ref_in_html_description(self):
+        help_command = self.create_help_command()
+        help_command.doc.target = 'html'
+        operation_handler = OperationDocumentEventHandler(help_command)
+        operation_handler.doc_description(help_command=help_command)
+        rendered = help_command.doc.getvalue().decode('utf-8')
+        self.assertIn(
+            "See :doc:`'aws help' </reference/index>` for descriptions of "
+            "global parameters", rendered
+        )
+
+    def test_includes_global_args_ref_in_man_options(self):
+        help_command = self.create_help_command()
+        operation_handler = OperationDocumentEventHandler(help_command)
+        operation_handler.doc_options_end(help_command=help_command)
+        rendered = help_command.doc.getvalue().decode('utf-8')
+        # The links aren't generated in the "man" mode.
+        self.assertIn(
+            "See 'aws help' for descriptions of global parameters", rendered
+        )
+
+    def test_includes_global_args_ref_in_html_options(self):
+        help_command = self.create_help_command()
+        help_command.doc.target = 'html'
+        operation_handler = OperationDocumentEventHandler(help_command)
+        operation_handler.doc_options_end(help_command=help_command)
+        rendered = help_command.doc.getvalue().decode('utf-8')
+        self.assertIn(
+            "See :doc:`'aws help' </reference/index>` for descriptions of "
+            "global parameters", rendered
+        )
 
 
 class TestTopicDocumentEventHandlerBase(unittest.TestCase):

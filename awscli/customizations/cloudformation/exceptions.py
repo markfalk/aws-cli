@@ -12,13 +12,6 @@ class InvalidTemplatePathError(CloudFormationCommandError):
     fmt = "Invalid template path {template_path}"
 
 
-class NoSuchBucketError(CloudFormationCommandError):
-    fmt = ("S3 Bucket does not exist. "
-           "Execute the command to create a new bucket"
-           "\n"
-           "aws s3 mb s3://{bucket_name}")
-
-
 class ChangeEmptyError(CloudFormationCommandError):
     fmt = "No changes to deploy. Stack {stack_name} is up to date"
 
@@ -41,9 +34,9 @@ class ExportFailedError(CloudFormationCommandError):
            "{ex}")
 
 
-class InvalidParameterOverrideArgumentError(CloudFormationCommandError):
+class InvalidKeyValuePairArgumentError(CloudFormationCommandError):
     fmt = ("{value} value passed to --{argname} must be of format "
-           "ParameterKey=ParameterValue")
+           "Key=Value")
 
 
 class DeployFailedError(CloudFormationCommandError):
@@ -53,3 +46,10 @@ class DeployFailedError(CloudFormationCommandError):
          "to fetch the list of events leading up to the failure"
          "\n"
          "aws cloudformation describe-stack-events --stack-name {stack_name}")
+
+class DeployBucketRequiredError(CloudFormationCommandError):
+    fmt = \
+        ("Templates with a size greater than 51,200 bytes must be deployed "
+         "via an S3 Bucket. Please add the --s3-bucket parameter to your "
+         "command. The local template will be copied to that S3 bucket and "
+         "then deployed.")
